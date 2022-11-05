@@ -12,7 +12,7 @@ from jax.lax import stop_gradient
 BETA = 8
 
 @jax.custom_jvp
-def gr_than(x, thr=1):
+def gr_than(x, thr=0.7):
     ''' Heaviside spiking implementation
     '''
     return (x > thr).astype(jnp.float32)
