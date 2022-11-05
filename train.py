@@ -144,7 +144,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, default=23, help='Random seed')
-    parser.add_argument('--batch_train', type=int, default=64, help='Batch size for meta-training')
+    parser.add_argument('--batch_train', type=int, default=256, help='Batch size for meta-training')
     parser.add_argument('--batch_test', type=int, default=10, help='Batch size for meta-testing')
     parser.add_argument('--n_iter', type=int, default=20000, help='Number of iterations')
     parser.add_argument('--n_inp', type=int, default=1, help='Number of input neurons')
@@ -152,12 +152,12 @@ if __name__ == '__main__':
     parser.add_argument('--n_h0', type=int, default=40, help='Number of neurons in the first hidden layer')
     parser.add_argument('--n_h1', type=int, default=40, help='Number of neurons in the second hidden layer')
     parser.add_argument('--task_size', type=int, default=20, help='Number of samples per task')
-    parser.add_argument('--tau_mem', type=float, default=50e-3, help='Membrane time constant')
-    parser.add_argument('--tau_out', type=float, default=15e-3, help='Output time constant')
+    parser.add_argument('--tau_mem', type=float, default=10e-3, help='Membrane time constant')
+    parser.add_argument('--tau_out', type=float, default=1e-3, help='Output time constant')
     parser.add_argument('--lr_out', type=float, default=5e-4, help='Learning rate for the output layer')
     parser.add_argument('--alpha', type=float, default=1, help='Learning rate for the inner updates')
-    parser.add_argument('--target_fr', type=float, default=5, help='Target firing rate')
-    parser.add_argument('--lambda_fr', type=float, default=0.05, help='Weight of the firing rate loss')
+    parser.add_argument('--target_fr', type=float, default=2, help='Target firing rate')
+    parser.add_argument('--lambda_fr', type=float, default=0, help='Weight of the firing rate loss')
 
     args = parser.parse_args()
 
