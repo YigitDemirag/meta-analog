@@ -14,7 +14,8 @@ from jax.example_libraries import optimizers
 import time 
 import matplotlib.pyplot as plt
 from network import lif_forward
-from utils import param_initializer, j_sample_sinusoid_task, ls_than, gr_than
+from utils import param_initializer, j_sample_sinusoid_task, ls_than, gr_than, analog_init
+from memristor import read
 
 def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
                       n_out, n_h0, n_h1, task_size, tau_mem, tau_out,
@@ -25,7 +26,7 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
         return h, out_t
 
     def task_predict(weights, X):
-        _, net_const, net_dyn = param_initializer(key, n_inp, n_h0, n_h1, n_out, tau_mem, tau_out)
+        _, net_const, net_dyn = analog_init(key, n_inp, n_h0, n_h1, n_out, tau_mem, tau_out)
         _, out = scan(net_step, [weights, net_const, net_dyn], X, length=100)
         return out
 
@@ -41,7 +42,17 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
         loss = L_mse + lambda_fr * L_fr
         return loss, [fr0, fr1, out_m, L_fr, L_mse]
  
-    def update_in(theta, sX, sY, alpha):
+    def update_in(devices, key, sX, sY, alpha):
+        key_rp, key_rn, key_wp, key_wn = random.split(key, 4)
+
+        # Get G+ and G- devices
+        pos_devs = tree_map(lambda dev: tree_map(lambda G: G[0], dev), devices)
+        neg_devs = tree_map(lambda dev: tree_map(lambda G: G[1], dev), devices)
+
+        # Effective synaptic weights at t=t_read
+        theta = [(read(key_rp, dp, t=1, perf=True)-read(key_rn, dn, t=1, perf=True)) 
+                  / (20-0.1) for dp, dn in zip(pos_devs, neg_devs)]
+        
         value, grads_in = value_and_grad(loss, has_aux=True)(theta, sX, sY) # 20, 100, 1
         loss_in, [fr0, fr1, out_m, L_fr, L_mse] = value
 
@@ -79,34 +90,34 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
         return updated_weights, metrics
 
 
-    def maml_loss(theta, sX, sY, qX, qY):
-        updated_weights, metrics = update_in(theta, sX, sY, alpha)
+    def maml_loss(devices, key, sX, sY, qX, qY):
+        updated_weights, metrics = update_in(devices, key, sX, sY, alpha)
         return loss(updated_weights, qX, qY), metrics
 
-    def batched_maml_loss(theta, sX, sY, qX, qY):
-        task_losses, metrics = vmap(maml_loss, in_axes=(None, 0, 0, 0, 0))(theta, sX, sY, qX, qY)
+    def batched_maml_loss(devices, key, sX, sY, qX, qY):
+        task_losses, metrics = vmap(maml_loss, in_axes=(None, None, 0, 0, 0, 0))(devices, key, sX, sY, qX, qY)
         return jnp.mean(task_losses[0]), metrics
 
     @jit
-    def update_out(i, opt_state, sX, sY, qX, qY):
-        weight = get_params(opt_state)
-        weight = tree_map(lambda W: jnp.clip(W, -1, 1), weight)
-        (L, metrics), grads_out = value_and_grad(batched_maml_loss, has_aux=True)(weight, sX, sY, qX, qY)
-        updated_devices = opt_update(i, grads_out, opt_state)
-        return updated_devices, L, metrics
+    def update_out(key, i, opt_state, sX, sY, qX, qY):
+        devices = get_params(opt_state)
+        devices = tree_map(lambda W: jnp.clip(W, 0.1, 20), devices)
+        (L, metrics), grads_out = value_and_grad(batched_maml_loss, has_aux=True)(devices, key, sX, sY, qX, qY)
+        opt_state = opt_update(i, grads_out, opt_state)
+        return opt_state, L, metrics
 
     opt_init, opt_update, get_params = optimizers.adam(step_size=lr_out)
-    weights, _, _ = param_initializer(key, n_inp, n_h0, n_h1, n_out, tau_mem, tau_out)
-    opt_state = opt_init(weights)
+    devices, _, _ = analog_init(key, n_inp, n_h0, n_h1, n_out, tau_mem, tau_out)
+    opt_state = opt_init(devices)
     
     # Start meta-training
     loss_arr = []
     for epoch in range(n_iter):
         t0 = time.time()
-        key, key_eval = random.split(key, 2)
+        key, key_device, key_eval = random.split(key, 3)
         sX, sY, qX, qY = j_sample_sinusoid_task(key, batch_size=batch_train, 
                                                 num_samples_per_task=task_size)
-        opt_state, L, metrics = update_out(epoch, opt_state, sX, sY, qX, qY)
+        opt_state, L, metrics = update_out(key_device, epoch, opt_state, sX, sY, qX, qY)
         if epoch % 100 == 0:
             loss_arr.append(L)
             print(f'Epoch: {epoch} - Loss: {L:.3f} - Time : {(time.time()-t0):.3f} s')

@@ -10,6 +10,7 @@ import jax.random as random
 import jax.numpy as jnp
 from jax.tree_util import tree_map
 from einops import repeat
+from memristor import read
 
 GMAX = 20.0
 GMIN = 0.1
@@ -105,7 +106,7 @@ def analog_init(key, n_inp, n_h0, n_h1, n_out, tau_mem, tau_out):
     """
     net_params = param_initializer(key, n_inp, n_h0, n_h1, n_out, tau_mem, tau_out)
 
-    G_pos = [random.uniform(l_key, shape=l_W.shape, minval=5, maxval=10) 
+    G_pos = [random.uniform(l_key, shape=l_W.shape, minval=7, maxval=12) 
              for l_key, l_W 
              in zip(random.split(key, len(net_params[0])), net_params[0])]
 
