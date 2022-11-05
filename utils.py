@@ -4,15 +4,55 @@ Utils
 Author: Yigit Demirag, Forschungszentrum Jülich, 2022
 '''
 
-from re import L
-from typing import Any
+import jax 
 from jax import jit
 import jax.random as random
 import jax.numpy as jnp
 from jax.tree_util import tree_map
-from jax.lax import cond
 from einops import repeat
-from torch import true_divide
+
+GMAX = 20.0
+GMIN = 0.1
+
+BETA = 1
+
+@jax.custom_jvp
+def gr_than(x, thr=1.0):
+    ''' Heaviside spiking implementation
+    '''
+    return (x > thr).astype(jnp.float32)
+
+
+@gr_than.defjvp
+def gr_jvp(primals, tangents):
+    ''' Twice-differentiable fast sigmoid function to implement
+        surrogate gradient learning.
+
+        Gradient scale factor is a critical  hyperparameter that
+        needs to be optimized for the task.
+    '''
+    x, thr = primals
+    x_dot, y_dot = tangents
+    primal_out = gr_than(x, thr)
+    tangent_out = x_dot / (BETA * jnp.absolute(x - thr) + 1) ** 2
+    return primal_out, tangent_out
+
+@jax.custom_jvp
+def ls_than(x, thr):
+    ''' Less than implementation
+    '''
+    return (x < thr).astype(jnp.float32)
+
+
+@ls_than.defjvp
+def lt_jvp(primals, tangents):
+    ''' Straight-through estimator for lt() operation
+    '''
+    x, thr = primals
+    x_dot, y_dot = tangents
+    primal_out = ls_than(x, thr)
+    tangent_out = x_dot / -(BETA * jnp.absolute(x - thr) + 1) ** 2
+    return primal_out, tangent_out
 
 def sample_sinusoid_task(key, batch_size, num_samples_per_task):
     key_A, key_phi, key_s, key_q = random.split(key, 4)
@@ -42,11 +82,11 @@ def param_initializer(key, n_inp, n_h0, n_h1, n_out, tau_mem, tau_out):
 
     # Weights
     w0 = random.uniform(key_h0, [n_inp, n_h0], minval=-jnp.sqrt(6/(n_inp+n_h0)), 
-                                               maxval= jnp.sqrt(6/(n_inp+n_h0))) * 0.1
-    w1 = random.uniform(key_h1, [n_h0, n_h1],  minval=-jnp.sqrt(6/(n_h0+n_h1)), 
-                                               maxval= jnp.sqrt(6/(n_h0+n_h1))) * 0.1
+                                               maxval= jnp.sqrt(6/(n_inp+n_h0))) * 0.05
+    w1 = random.uniform(key_h1, [n_h0, n_h1],  minval=-jnp.sqrt(6/(n_h0+n_h1)),
+                                               maxval= jnp.sqrt(6/(n_h0+n_h1))) * 0.05
     w2 = random.uniform(key_h2, [n_h1, n_out], minval=-jnp.sqrt(6/(n_h1+n_out)),
-                                               maxval= jnp.sqrt(6/(n_h1+n_out))) * 0.1
+                                               maxval= jnp.sqrt(6/(n_h1+n_out))) * 0.05
     # Biases
     b0 = jnp.zeros(n_h0)
     b1 = jnp.zeros(n_h1)
@@ -56,3 +96,23 @@ def param_initializer(key, n_inp, n_h0, n_h1, n_out, tau_mem, tau_out):
                   jnp.zeros(n_h1), jnp.zeros(n_out)]
     net_params = [[w0, b0, w1, b1, w2, b2], [alpha, kappa], neuron_dyn]
     return net_params
+
+def analog_init(key, n_inp, n_h0, n_h1, n_out, tau_mem, tau_out):
+    """
+    Maps ideal FP32 weights to G+ and G- differential memristor
+    conductances such that W = (G+ - G-) / (GMAX - GMIN) by 
+    initializing G+ and calculating G-. 
+    This initialization matters only for offline SW training.
+    """
+    net_params = param_initializer(key, n_inp, n_h0, n_h1, n_out, tau_mem, tau_out)
+
+    G_pos = [random.uniform(l_key, shape=l_W.shape, minval=5, maxval=10) 
+             for l_key, l_W 
+             in zip(random.split(key, len(net_params[0])), net_params[0])]
+
+    G_neg = [Gp - W * (GMAX-GMIN) for Gp, W in zip(G_pos, net_params[0])]
+
+    devices = [dict({'G' : jnp.stack([Gp, Gn]),
+                     'tp': 0.0 * jnp.stack([Gp, Gp])}) for Gp, Gn in zip(G_pos, G_neg)]
+
+    return [devices, net_params[1], net_params[2]]
