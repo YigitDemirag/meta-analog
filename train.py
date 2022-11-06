@@ -3,10 +3,14 @@ Model Agnostic Meta-Learning (MAML) training for
 spiking neural networks with memristive synapses for 
 adaptation on the edge computing.
 
+Offline training     New task arrives        New task performance
+t=0s                 t=100s      t=101s      t=151s
+[deployement] ------ [t_read] -- [t_prog] -- [t_test]
+
 Author: Yigit Demirag, Forschungszentrum Jülich, 2022
 '''
 
-from jax import vmap, pmap, jit, grad, value_and_grad
+from jax import vmap, jit, value_and_grad
 import jax.numpy as jnp
 from jax.lax import scan
 from jax.tree_util import tree_map
@@ -14,12 +18,13 @@ from jax.example_libraries import optimizers
 import time 
 import matplotlib.pyplot as plt
 from network import lif_forward
-from utils import param_initializer, j_sample_sinusoid_task, ls_than, gr_than, analog_init
-from memristor import read
+from utils import j_sample_sinusoid_task, ls_than, gr_than, analog_init
+from memristor import read, write, zero_time_dim
 
 def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
                       n_out, n_h0, n_h1, task_size, tau_mem, tau_out,
-                      lr_out, alpha, target_fr, lambda_fr):
+                      lr_out, t_read, t_prog, t_wait, t_test, mvm_scale,
+                      target_fr, lambda_fr, perf):
 
     def net_step(h, x_t):
         h, out_t = lif_forward(h, x_t)
@@ -32,7 +37,7 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
 
     batch_task_predict = vmap(task_predict, in_axes=(None, 0))
 
-    def loss(weights, X, Y): # 20, 100, 1
+    def loss(weights, X, Y):
         z0, z1, Yhat = batch_task_predict(weights, X)
         L_mse = jnp.mean((Y - Yhat)**2)
         fr0 = 10*jnp.mean(z0)
@@ -42,7 +47,7 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
         loss = L_mse + lambda_fr * L_fr
         return loss, [fr0, fr1, out_m, L_fr, L_mse]
  
-    def update_in(devices, key, sX, sY, alpha):
+    def update_in(devices, key, sX, sY):
         key_rp, key_rn, key_wp, key_wn = random.split(key, 4)
 
         # Get G+ and G- devices
@@ -50,32 +55,37 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
         neg_devs = tree_map(lambda dev: tree_map(lambda G: G[1], dev), devices)
 
         # Effective synaptic weights at t=t_read
-        theta = [(read(key_rp, dp, t=1, perf=True)-read(key_rn, dn, t=1, perf=True)) 
-                  / (20-0.1) for dp, dn in zip(pos_devs, neg_devs)]
+        theta = [(read(key_rp, dp, t=t_read, perf=perf)-read(key_rn, dn, t=t_read, perf=perf)) 
+                  / mvm_scale for dp, dn in zip(pos_devs, neg_devs)]
         
+        # Calculate gradients 
         value, grads_in = value_and_grad(loss, has_aux=True)(theta, sX, sY) # 20, 100, 1
-        loss_in, [fr0, fr1, out_m, L_fr, L_mse] = value
 
-        def inner_sgd_fn(g, p):
-            # Option 1)
-            P = p - alpha * g
+        # Calculate grad masks
+        pos_grad_mask  = tree_map(lambda grads: ls_than(grads, -0.1), grads_in)
+        neg_grad_mask  = tree_map(lambda grads: gr_than(grads, 0.1), grads_in)
+ 
+        # Extend grad mask pytree
+        pos_grad_mask = [{'G':grad_mask, 'tp':grad_mask} for grad_mask in pos_grad_mask]
+        neg_grad_mask = [{'G':grad_mask, 'tp':grad_mask} for grad_mask in neg_grad_mask]
 
-            # Option 2) 
-            #P = jnp.where(np.abs(g) > 0, p - alpha * g, p)
+        # Device program with inner loop update
+        updated_pos_devs = tree_map(lambda dev, up_mask: 
+                                    write(key_wp, dev, up_mask, tp=t_prog, perf=perf),
+                                    pos_devs, pos_grad_mask, is_leaf=lambda x: isinstance(x, dict))
 
-            # Option 3) 
-            #softsign = lambda x : x / (1 + jnp.abs(x))
-            #P = gr_than(thr, jnp.abs(g)) *  p + (1 - gr_than(thr, jnp.abs(g))) * (p - alpha * softsign(g))
+        updated_neg_devs = tree_map(lambda dev, up_mask: 
+                            write(key_wn, dev, up_mask, tp=t_prog, perf=perf),
+                            neg_devs, neg_grad_mask, is_leaf=lambda x: isinstance(x, dict))
 
-            P = jnp.clip(P, -1, 1)
-            return P
+        # Read device states at t=t_prog + t_wait
+        updated_weights = [(read(key_rp, dp, t=t_prog + t_wait, perf=perf) - read(key_rn, dn, t=t_prog + t_wait, perf=perf)) 
+                           / mvm_scale for dp, dn in zip(updated_pos_devs, updated_neg_devs)]
 
-        updated_weights = tree_map(inner_sgd_fn, grads_in, theta)
-
-        metrics ={'Inner L_fr': L_fr,
-                  'Inner L_mse': L_mse,
-                  'fr0': fr0,
-                  'fr1': fr1,
+        metrics ={'Inner L_fr': value[1][3],
+                  'Inner L_mse': value[1][4],
+                  'fr0': value[1][0],
+                  'fr1': value[1][1],
                   'theta-0': theta[0],
                   'theta-1': theta[2],
                   'theta-2': theta[4],
@@ -85,13 +95,13 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
                   'dW-0': updated_weights[0] - theta[0],
                   'dW-1': updated_weights[2] - theta[2],
                   'dW-2': updated_weights[4] - theta[4],
-                  'out_m': out_m}
+                  'out_m': value[1][2]}
             
         return updated_weights, metrics
 
 
     def maml_loss(devices, key, sX, sY, qX, qY):
-        updated_weights, metrics = update_in(devices, key, sX, sY, alpha)
+        updated_weights, metrics = update_in(devices, key, sX, sY)
         return loss(updated_weights, qX, qY), metrics
 
     def batched_maml_loss(devices, key, sX, sY, qX, qY):
@@ -101,8 +111,10 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
     @jit
     def update_out(key, i, opt_state, sX, sY, qX, qY):
         devices = get_params(opt_state)
+        devices = zero_time_dim(devices)
         devices = tree_map(lambda W: jnp.clip(W, 0.1, 20), devices)
         (L, metrics), grads_out = value_and_grad(batched_maml_loss, has_aux=True)(devices, key, sX, sY, qX, qY)
+        devices = zero_time_dim(devices)
         opt_state = opt_update(i, grads_out, opt_state)
         return opt_state, L, metrics
 
@@ -138,7 +150,7 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
     for i in range(2): # Initial prediction followed by one-shot prediction
         z0, z1, sYhat = vmap(batch_task_predict, in_axes=(None, 0))(weights, sX_t)
         plt.plot(sX_t[0,:,-1,0], sYhat[0,:,-1,0], '.', label='Prediction '+str(i), color=c[i])
-        weights, metrics = vmap(update_in, in_axes=(None, 0, 0, None))(weights, sX_t, sY_t, alpha)
+        weights, metrics = vmap(update_in, in_axes=(None, 0, 0, None))(weights, sX_t, sY_t)
         weights = tree_map(lambda W: jnp.mean(W, axis=0), weights)
 
     # Save figure
@@ -165,11 +177,15 @@ if __name__ == '__main__':
     parser.add_argument('--task_size', type=int, default=20, help='Number of samples per task')
     parser.add_argument('--tau_mem', type=float, default=10e-3, help='Membrane time constant')
     parser.add_argument('--tau_out', type=float, default=1e-3, help='Output time constant')
-    parser.add_argument('--lr_out', type=float, default=5e-4, help='Learning rate for the output layer')
-    parser.add_argument('--alpha', type=float, default=1, help='Learning rate for the inner updates')
-    parser.add_argument('--target_fr', type=float, default=2, help='Target firing rate')
-    parser.add_argument('--lambda_fr', type=float, default=0, help='Weight of the firing rate loss')
-
+    parser.add_argument('--lr_out', type=float, default=1e-2, help='Learning rate for the output layer')
+    parser.add_argument('--tread', type=float, default=100, help='New task read time')
+    parser.add_argument('--tprog', type=float, default=101, help='New task programming time')
+    parser.add_argument('--twait', type=float, default=50, help='New task optimized target time')
+    parser.add_argument('--ttest', type=float, default=251, help='New task test time') 
+    parser.add_argument('--mvm_scale', type=float, default=19.9, help='Scaling factor B for e.g. W=B*(Gpos-Gneg)')
+    parser.add_argument('--target_fr', type=int, default=2, help='Target firing rate')
+    parser.add_argument('--lambda_fr', type=float, default=0, help='Regularization parameter for the firing rate')
+    parser.add_argument('--perf', action='store_true', help='Enable performance mode')
     args = parser.parse_args()
 
     wandb.init(project='meta-analog', config=args)
@@ -187,6 +203,11 @@ if __name__ == '__main__':
                       tau_mem=args.tau_mem,
                       tau_out=args.tau_out,
                       lr_out=args.lr_out,
-                      alpha=args.alpha,
+                      t_read=args.tread, 
+                      t_prog=args.tprog,
+                      t_wait=args.twait,
+                      t_test=args.ttest,
+                      mvm_scale=args.mvm_scale,
                       target_fr=args.target_fr,
-                      lambda_fr=args.lambda_fr)
+                      lambda_fr=args.lambda_fr,
+                      perf=args.perf)

@@ -5,31 +5,9 @@ surrogate gradient learning
 Author: Yigit Demirag, Forschungszentrum Jülich, 2022
 '''
 
-import jax
 import jax.numpy as jnp
-from jax.lax import stop_gradient
+from utils import gr_than
 
-BETA = 8
-
-@jax.custom_jvp
-def gr_than(x, thr=0.7):
-    ''' Heaviside spiking implementation
-    '''
-    return (x > thr).astype(jnp.float32)
-
-@gr_than.defjvp
-def gr_jvp(primals, tangents):
-    ''' Twice-differentiable fast sigmoid function to implement
-        surrogate gradient learning. 
-        
-        Gradient scale factor is a critical  hyperparameter that 
-        needs to be optimized for the task.
-    '''
-    x, thr = primals
-    x_dot, y_dot = tangents
-    primal_out = gr_than(x, thr)
-    tangent_out = x_dot / (BETA * jnp.absolute(x - thr) + 1) ** 2
-    return primal_out, tangent_out
 
 def lif_forward(state, x):
     ''' Simplified (no alpha kernel on synapses) 2-layer FF LIF network

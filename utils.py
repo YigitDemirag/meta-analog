@@ -10,7 +10,6 @@ import jax.random as random
 import jax.numpy as jnp
 from jax.tree_util import tree_map
 from einops import repeat
-from memristor import read
 
 GMAX = 20.0
 GMIN = 0.1
@@ -43,7 +42,6 @@ def ls_than(x, thr):
     ''' Less than implementation
     '''
     return (x < thr).astype(jnp.float32)
-
 
 @ls_than.defjvp
 def lt_jvp(primals, tangents):

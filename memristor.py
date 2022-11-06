@@ -17,6 +17,7 @@ from jax.lax import cond
 from jax.tree_util import tree_map
 
 G0 = 0.1    # (µS) Initial device conductance mean
+GMIN = 0.1  # (µS) Minimum device conductance
 GMAX = 20.0 # (µS) Maximum device conductance
 n_bits = 1  # Ideal device bit-resolution, to compare with SRAM
 
@@ -32,8 +33,8 @@ def write(key, device, mask, tp, perf=False):
     dgn = mu_dgn + std_dgn * random.normal(key, shape=device['G'].shape)
 
     device['G'] = cond(perf,
-                       lambda G: jnp.clip(G + mask['G'] * GMAX/(2**n_bits), 0.1, GMAX),
-                       lambda G: jnp.clip(G + mask['G'] * dgn, 0.1, GMAX),
+                       lambda G: jnp.clip(G + mask['G'] * GMAX/(2**n_bits), GMIN, GMAX),
+                       lambda G: jnp.clip(G + mask['G'] * dgn, GMIN, GMAX),
                        device['G'])
     device['tp'] = mask['tp'] * tp * jnp.ones_like(device['tp'])
     return device
@@ -56,18 +57,17 @@ def read(key, device, t, perf=False):
     nG = random.normal(key, shape=device['G'].shape) * std_nG
 
     Gn = cond(perf,
-              lambda G: jnp.clip(G, 0.1, GMAX),
-              lambda G: jnp.clip(G + nG, 0.1, GMAX),
+              lambda G: jnp.clip(G, GMIN, GMAX),
+              lambda G: jnp.clip(G + nG, GMIN, GMAX),
               device['G'])
     return Gn
-
 
 @jit
 def reset(key, device, tp):
     ''' Simulates a single RESET pulse.
     '''
     device['G'] = G0 + random.normal(key, shape=device['G'].shape) * G0 * 0.1
-    device['G'] = device['G'].clip(0.1, GMAX)
+    device['G'] = device['G'].clip(GMIN, GMAX)
     device['tp'] = tp * jnp.ones_like(device['G'])
     return device
 
@@ -83,7 +83,7 @@ def create_devs(key, shape):
 def zero_time_dim(dstate):
     ''' Reset the time dimension of device state.
     '''
-    dstate = tree_map(lambda dstate: {'G': jnp.clip(dstate['G'], 0.1, GMAX),
+    dstate = tree_map(lambda dstate: {'G': jnp.clip(dstate['G'], GMIN, GMAX),
                                       'tp': jnp.zeros_like(dstate['tp'])},
                       dstate,
                       is_leaf=lambda x: isinstance(x, dict))
