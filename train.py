@@ -23,8 +23,8 @@ from memristor import read, write, zero_time_dim, GMIN, GMAX
 
 def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
                       n_out, n_h0, n_h1, task_size, tau_mem, tau_out,
-                      lr_out, t_read, t_prog, t_wait, t_test, mvm_scale,
-                      target_fr, lambda_fr, perf):
+                      lr_out, t_read, t_prog, t_wait, t_test, target_fr, 
+                      lambda_fr, perf):
 
     def net_step(h, x_t):
         h, out_t = lif_forward(h, x_t)
@@ -56,7 +56,7 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
 
         # Effective synaptic weights at t=t_read
         theta = [(read(key_rp, dp, t=t_read, perf=perf)-read(key_rn, dn, t=t_read, perf=perf)) 
-                  / mvm_scale for dp, dn in zip(pos_devs, neg_devs)]
+                  / (GMAX-GMIN) for dp, dn in zip(pos_devs, neg_devs)]
         
         # Calculate gradients 
         value, grads_in = value_and_grad(loss, has_aux=True)(theta, sX, sY)
@@ -80,7 +80,7 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
 
         # Read device states at t=t_prog + t_wait
         updated_weights = [(read(key_rp, dp, t=t_prog + t_wait, perf=perf) - read(key_rn, dn, t=t_prog + t_wait, perf=perf)) 
-                           / mvm_scale for dp, dn in zip(updated_pos_devs, updated_neg_devs)]
+                           / (GMAX-GMIN) for dp, dn in zip(updated_pos_devs, updated_neg_devs)]
 
         metrics ={'Inner L_fr': value[1][3],
                   'Inner L_mse': value[1][4],
@@ -143,7 +143,7 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
     sX, sY, qX, qY = j_sample_sinusoid_task(key_eval, batch_size=batch_test, 
                                             num_samples_per_task=100)
     devices = get_params(opt_state)
-    key_rp, key_rn, key_w, key_wn = random.split(key_dev, 4)
+    key_rp, key_rn, key_w = random.split(key_dev, 3)
 
     # Get G+ and G- devices
     pos_devs = tree_map(lambda dev: tree_map(lambda G: G[0], dev), devices)
@@ -151,14 +151,14 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
 
     # Effective synaptic weights at t=t_read
     theta = [(read(key_rp, dp, t=t_test, perf=perf)-read(key_rn, dn, t=t_test, perf=perf)) 
-                / mvm_scale for dp, dn in zip(pos_devs, neg_devs)]
+                / (GMAX-GMIN) for dp, dn in zip(pos_devs, neg_devs)]
 
     sX_t = sX[:,:task_size,:,:] # batch, number, time, dim
     sY_t = sY[:,:task_size,:,:]
     plt.figure(figsize=(10,4));
     c = ['slateblue', 'darkblue']
     for i in range(2): # Initial prediction followed by one-shot prediction
-        z0, z1, sYhat = vmap(batch_task_predict, in_axes=(None, 0))(theta, sX_t)
+        _, _, sYhat = vmap(batch_task_predict, in_axes=(None, 0))(theta, sX_t)
         plt.plot(sX_t[0,:,-1,0], sYhat[0,:,-1,0], '.', label='Prediction '+str(i), color=c[i])
         theta, metrics = vmap(update_in, in_axes=(None, None, 0, 0))(devices, key_w, sX_t, sY_t)
         theta = tree_map(lambda W: jnp.mean(W, axis=0), theta)
@@ -192,7 +192,6 @@ if __name__ == '__main__':
     parser.add_argument('--tprog', type=float, default=101, help='New task programming time')
     parser.add_argument('--twait', type=float, default=50, help='New task optimized target time')
     parser.add_argument('--ttest', type=float, default=251, help='New task test time') 
-    parser.add_argument('--mvm_scale', type=float, default=19.9, help='Scaling factor B for e.g. W=B*(Gpos-Gneg)')
     parser.add_argument('--target_fr', type=int, default=2, help='Target firing rate')
     parser.add_argument('--lambda_fr', type=float, default=0, help='Regularization parameter for the firing rate')
     parser.add_argument('--perf', action='store_true', help='Enable performance mode')
@@ -217,7 +216,6 @@ if __name__ == '__main__':
                       t_prog=args.tprog,
                       t_wait=args.twait,
                       t_test=args.ttest,
-                      mvm_scale=args.mvm_scale,
                       target_fr=args.target_fr,
                       lambda_fr=args.lambda_fr,
                       perf=args.perf)
