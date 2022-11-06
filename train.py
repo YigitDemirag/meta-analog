@@ -4,7 +4,7 @@ spiking neural networks with memristive synapses for
 adaptation on the edge computing.
 
 Offline training     New task arrives        New task performance
-t=0s                 t=100s      t=101s      t=151s
+t=0.1s               t=100s      t=101s      t=151s
 [deployement] ------ [t_read] -- [t_prog] -- [t_test]
 
 Author: Yigit Demirag, Forschungszentrum Jülich, 2022
@@ -19,7 +19,7 @@ import time
 import matplotlib.pyplot as plt
 from network import lif_forward
 from utils import j_sample_sinusoid_task, ls_than, gr_than, analog_init
-from memristor import read, write, zero_time_dim
+from memristor import read, write, zero_time_dim, GMIN, GMAX
 
 def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
                       n_out, n_h0, n_h1, task_size, tau_mem, tau_out,
@@ -37,7 +37,7 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
 
     batch_task_predict = vmap(task_predict, in_axes=(None, 0))
 
-    def loss(weights, X, Y):
+    def loss(weights, X, Y): # TODO: Seperate inner and outer losses and learn threshold
         z0, z1, Yhat = batch_task_predict(weights, X)
         L_mse = jnp.mean((Y - Yhat)**2)
         fr0 = 10*jnp.mean(z0)
@@ -47,7 +47,7 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
         loss = L_mse + lambda_fr * L_fr
         return loss, [fr0, fr1, out_m, L_fr, L_mse]
  
-    def update_in(devices, key, sX, sY):
+    def update_in(devices, key, sX, sY): # TODO: Only output loop update
         key_rp, key_rn, key_wp, key_wn = random.split(key, 4)
 
         # Get G+ and G- devices
@@ -59,7 +59,7 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
                   / mvm_scale for dp, dn in zip(pos_devs, neg_devs)]
         
         # Calculate gradients 
-        value, grads_in = value_and_grad(loss, has_aux=True)(theta, sX, sY) # 20, 100, 1
+        value, grads_in = value_and_grad(loss, has_aux=True)(theta, sX, sY)
 
         # Calculate grad masks
         pos_grad_mask  = tree_map(lambda grads: ls_than(grads, -0.1), grads_in)
@@ -112,7 +112,7 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
     def update_out(key, i, opt_state, sX, sY, qX, qY):
         devices = get_params(opt_state)
         devices = zero_time_dim(devices)
-        devices = tree_map(lambda W: jnp.clip(W, 0.1, 20), devices)
+        devices = tree_map(lambda W: jnp.clip(W, GMIN, GMAX), devices)
         (L, metrics), grads_out = value_and_grad(batched_maml_loss, has_aux=True)(devices, key, sX, sY, qX, qY)
         devices = zero_time_dim(devices)
         opt_state = opt_update(i, grads_out, opt_state)
@@ -139,19 +139,29 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
 
 
     # Evaluate fine tuning
+    key_eval, key_dev = random.split(key_eval)
     sX, sY, qX, qY = j_sample_sinusoid_task(key_eval, batch_size=batch_test, 
                                             num_samples_per_task=100)
-    weights = get_params(opt_state)
+    devices = get_params(opt_state)
+    key_rp, key_rn, key_w, key_wn = random.split(key_dev, 4)
+
+    # Get G+ and G- devices
+    pos_devs = tree_map(lambda dev: tree_map(lambda G: G[0], dev), devices)
+    neg_devs = tree_map(lambda dev: tree_map(lambda G: G[1], dev), devices)
+
+    # Effective synaptic weights at t=t_read
+    theta = [(read(key_rp, dp, t=t_test, perf=perf)-read(key_rn, dn, t=t_test, perf=perf)) 
+                / mvm_scale for dp, dn in zip(pos_devs, neg_devs)]
 
     sX_t = sX[:,:task_size,:,:] # batch, number, time, dim
     sY_t = sY[:,:task_size,:,:]
     plt.figure(figsize=(10,4));
     c = ['slateblue', 'darkblue']
     for i in range(2): # Initial prediction followed by one-shot prediction
-        z0, z1, sYhat = vmap(batch_task_predict, in_axes=(None, 0))(weights, sX_t)
+        z0, z1, sYhat = vmap(batch_task_predict, in_axes=(None, 0))(theta, sX_t)
         plt.plot(sX_t[0,:,-1,0], sYhat[0,:,-1,0], '.', label='Prediction '+str(i), color=c[i])
-        weights, metrics = vmap(update_in, in_axes=(None, 0, 0, None))(weights, sX_t, sY_t)
-        weights = tree_map(lambda W: jnp.mean(W, axis=0), weights)
+        theta, metrics = vmap(update_in, in_axes=(None, None, 0, 0))(devices, key_w, sX_t, sY_t)
+        theta = tree_map(lambda W: jnp.mean(W, axis=0), theta)
 
     # Save figure
     plt.plot(sX[0,:,-1,0], sY[0,:,-1,0], '.', label='Ground truth', color='red')
