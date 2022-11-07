@@ -37,15 +37,23 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
 
     batch_task_predict = vmap(task_predict, in_axes=(None, 0))
 
-    def loss(weights, X, Y): # TODO: Seperate inner and outer losses and learn threshold
+    # TODO: Learn threshold
+    def inner_loss(weights, X, Y):
         z0, z1, Yhat = batch_task_predict(weights, X)
         L_mse = jnp.mean((Y - Yhat)**2)
         fr0 = 10*jnp.mean(z0)
         fr1 = 10*jnp.mean(z1)  
-        out_m = jnp.mean(Yhat)
+        L_fr = jnp.mean(target_fr-fr0) ** 2 + jnp.mean(target_fr-fr1) ** 2
+        return L_mse, [fr0, fr1, L_fr, L_mse]
+
+    def outer_loss(weights, X, Y):
+        z0, z1, Yhat = batch_task_predict(weights, X)
+        L_mse = jnp.mean((Y - Yhat)**2)
+        fr0 = 10*jnp.mean(z0)
+        fr1 = 10*jnp.mean(z1)  
         L_fr = jnp.mean(target_fr-fr0) ** 2 + jnp.mean(target_fr-fr1) ** 2
         loss = L_mse + lambda_fr * L_fr
-        return loss, [fr0, fr1, out_m, L_fr, L_mse]
+        return loss
  
     def update_in(devices, key, sX, sY): # TODO: Only output loop update
         key_rp, key_rn, key_wp, key_wn = random.split(key, 4)
@@ -59,7 +67,7 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
                   / (GMAX-GMIN) for dp, dn in zip(pos_devs, neg_devs)]
         
         # Calculate gradients 
-        value, grads_in = value_and_grad(loss, has_aux=True)(theta, sX, sY)
+        value, grads_in = value_and_grad(inner_loss, has_aux=True)(theta, sX, sY)
 
         # Calculate grad masks
         pos_grad_mask  = tree_map(lambda grads: ls_than(grads, -0.1), grads_in)
@@ -82,8 +90,8 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
         updated_weights = [(read(key_rp, dp, t=t_prog + t_wait, perf=perf) - read(key_rn, dn, t=t_prog + t_wait, perf=perf)) 
                            / (GMAX-GMIN) for dp, dn in zip(updated_pos_devs, updated_neg_devs)]
 
-        metrics ={'Inner L_fr': value[1][3],
-                  'Inner L_mse': value[1][4],
+        metrics ={'Inner L_fr': value[1][2],
+                  'Inner L_mse': value[1][3],
                   'fr0': value[1][0],
                   'fr1': value[1][1],
                   'theta-0': theta[0],
@@ -94,19 +102,18 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
                   'grad-2': grads_in[4],
                   'dW-0': updated_weights[0] - theta[0],
                   'dW-1': updated_weights[2] - theta[2],
-                  'dW-2': updated_weights[4] - theta[4],
-                  'out_m': value[1][2]}
+                  'dW-2': updated_weights[4] - theta[4]}
             
         return updated_weights, metrics
 
 
     def maml_loss(devices, key, sX, sY, qX, qY):
         updated_weights, metrics = update_in(devices, key, sX, sY)
-        return loss(updated_weights, qX, qY), metrics
+        return outer_loss(updated_weights, qX, qY), metrics
 
     def batched_maml_loss(devices, key, sX, sY, qX, qY):
         task_losses, metrics = vmap(maml_loss, in_axes=(None, None, 0, 0, 0, 0))(devices, key, sX, sY, qX, qY)
-        return jnp.mean(task_losses[0]), metrics
+        return jnp.mean(task_losses), metrics
 
     @jit
     def update_out(key, i, opt_state, sX, sY, qX, qY):
