@@ -19,7 +19,7 @@ import time
 import matplotlib.pyplot as plt
 from network import lif_forward
 from utils import j_sample_sinusoid_task, ls_than, gr_than, analog_init
-from memristor import read, write, zero_time_dim, GMIN, GMAX
+from analog import read, write, zero_time_dim, GMIN, GMAX
 
 def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
                       n_out, n_h0, n_h1, task_size, tau_mem, tau_out,
@@ -70,8 +70,8 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
         value, grads_in = value_and_grad(inner_loss, has_aux=True)(theta, sX, sY)
 
         # Calculate grad masks
-        pos_grad_mask  = tree_map(lambda grads: ls_than(grads, -0.1), grads_in)
-        neg_grad_mask  = tree_map(lambda grads: gr_than(grads, 0.1), grads_in)
+        pos_grad_mask  = tree_map(lambda grads: ls_than(grads, -1), grads_in)
+        neg_grad_mask  = tree_map(lambda grads: gr_than(grads, 1), grads_in)
  
         # Extend grad mask pytree
         pos_grad_mask = [{'G':grad_mask, 'tp':grad_mask} for grad_mask in pos_grad_mask]
@@ -119,9 +119,7 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
     def update_out(key, i, opt_state, sX, sY, qX, qY):
         devices = get_params(opt_state)
         devices = zero_time_dim(devices)
-        devices = tree_map(lambda W: jnp.clip(W, GMIN, GMAX), devices)
         (L, metrics), grads_out = value_and_grad(batched_maml_loss, has_aux=True)(devices, key, sX, sY, qX, qY)
-        devices = zero_time_dim(devices)
         opt_state = opt_update(i, grads_out, opt_state)
         return opt_state, L, metrics
 
@@ -146,8 +144,8 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
 
 
     # Evaluate fine tuning
-    key_eval, key_dev = random.split(key_eval)
-    sX, sY, qX, qY = j_sample_sinusoid_task(key_eval, batch_size=batch_test, 
+    key_eval, key_data, key_dev = random.split(key_eval, 3)
+    sX, sY, qX, qY = j_sample_sinusoid_task(key_data, batch_size=batch_test, 
                                             num_samples_per_task=100)
     devices = get_params(opt_state)
     key_rp, key_rn, key_w = random.split(key_dev, 3)
