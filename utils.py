@@ -54,6 +54,7 @@ def lt_jvp(primals, tangents):
     tangent_out = x_dot / -(BETA * jnp.absolute(x - thr) + 1) ** 2
     return primal_out, tangent_out
 
+@partial(jit, static_argnums=(1,2))
 def sample_sinusoid_task(key, batch_size, num_samples_per_task):
     key_A, key_phi, key_s, key_q = random.split(key, 4)
     A_list = random.uniform(key_A, [batch_size], minval=0.1, maxval=5)
@@ -70,8 +71,6 @@ def sample_sinusoid_task(key, batch_size, num_samples_per_task):
     xS, yS, xQ, yQ = tree_map(lambda x: repeat(x, 'b n d -> b n t d', t=100), 
                                                   [xS, yS, xQ, yQ])
     return xS, yS, xQ, yQ
-
-j_sample_sinusoid_task=jit(sample_sinusoid_task, static_argnums=(1,2))
 
 @partial(jit, static_argnums=(1,2,3,4,5,6))
 def param_initializer(key, n_inp, n_h0, n_h1, n_out, tau_mem, tau_out):
