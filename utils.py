@@ -10,6 +10,7 @@ import jax.random as random
 import jax.numpy as jnp
 from jax.tree_util import tree_map
 from einops import repeat
+from functools import partial
 
 GMAX = 20.0
 GMIN = 0.1
@@ -72,6 +73,7 @@ def sample_sinusoid_task(key, batch_size, num_samples_per_task):
 
 j_sample_sinusoid_task=jit(sample_sinusoid_task, static_argnums=(1,2))
 
+@partial(jit, static_argnums=(1,2,3,4,5,6))
 def param_initializer(key, n_inp, n_h0, n_h1, n_out, tau_mem, tau_out):
     ''' Initialize parameters
     '''
@@ -95,6 +97,7 @@ def param_initializer(key, n_inp, n_h0, n_h1, n_out, tau_mem, tau_out):
     net_params = [[w0, b0, w1, b1, w2, b2], [alpha, kappa], neuron_dyn]
     return net_params
 
+@partial(jit, static_argnums=(1,2,3,4,5,6))
 def analog_init(key, n_inp, n_h0, n_h1, n_out, tau_mem, tau_out):
     """
     Maps ideal FP32 weights to G+ and G- differential memristor
