@@ -35,7 +35,7 @@ def gr_jvp(primals, tangents):
     x, thr = primals
     x_dot, y_dot = tangents
     primal_out = gr_than(x, thr)
-    tangent_out = x_dot / (BETA * jnp.absolute(x - thr) + 1) ** 2
+    tangent_out = (x_dot / (BETA * jnp.absolute(x - thr) + 1) ** 2) + y_dot
     return primal_out, tangent_out
 
 @jax.custom_jvp
@@ -51,7 +51,7 @@ def lt_jvp(primals, tangents):
     x, thr = primals
     x_dot, y_dot = tangents
     primal_out = ls_than(x, thr)
-    tangent_out = x_dot / -(BETA * jnp.absolute(x - thr) + 1) ** 2
+    tangent_out = (x_dot / -(BETA * jnp.absolute(x - thr) + 1) ** 2) + y_dot
     return primal_out, tangent_out
 
 @partial(jit, static_argnums=(1,2))
