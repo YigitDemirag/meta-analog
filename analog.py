@@ -15,6 +15,7 @@ import jax.random as random
 from jax import jit
 from jax.lax import cond
 from jax.tree_util import tree_map
+from functools import partial
 
 G0 = 0.1    # (µS) Initial device conductance mean
 GMIN = 0.1  # (µS) Minimum device conductance
@@ -22,7 +23,7 @@ GMAX = 20.0 # (µS) Maximum device conductance
 n_bits = 1  # Ideal device bit-resolution, to compare with SRAM
 
 
-@jit
+@partial(jit, static_argnums=(4))
 def write(key, device, mask, tp, perf=False):
     ''' Simulates a single SET pulse.
     '''
@@ -40,7 +41,7 @@ def write(key, device, mask, tp, perf=False):
     return device
 
 
-@jit
+@partial(jit, static_argnums=(3))
 def read(key, device, t, perf=False):
     ''' Reads the conductance of device at given time.
     '''
