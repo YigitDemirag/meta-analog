@@ -18,7 +18,7 @@ from jax.example_libraries import optimizers
 import time 
 import matplotlib.pyplot as plt
 from network import lif_forward
-from utils import j_sample_sinusoid_task, ls_than, gr_than, analog_init
+from utils import sample_sinusoid_task, ls_than, gr_than, analog_init
 from analog import read, write, zero_time_dim, GMIN, GMAX
 
 def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
@@ -132,8 +132,8 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
     for epoch in range(n_iter):
         t0 = time.time()
         key, key_device, key_eval = random.split(key, 3)
-        sX, sY, qX, qY = j_sample_sinusoid_task(key, batch_size=batch_train, 
-                                                num_samples_per_task=task_size)
+        sX, sY, qX, qY = sample_sinusoid_task(key, batch_size=batch_train, 
+                                              num_samples_per_task=task_size)
         opt_state, L, metrics = update_out(key_device, epoch, opt_state, sX, sY, qX, qY)
         if epoch % 100 == 0:
             loss_arr.append(L)
@@ -145,8 +145,8 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
 
     # Evaluate fine tuning
     key_eval, key_data, key_dev = random.split(key_eval, 3)
-    sX, sY, qX, qY = j_sample_sinusoid_task(key_data, batch_size=batch_test, 
-                                            num_samples_per_task=100)
+    sX, sY, qX, qY = sample_sinusoid_task(key_data, batch_size=batch_test, 
+                                          num_samples_per_task=100)
     devices = get_params(opt_state)
     key_rp, key_rn, key_w = random.split(key_dev, 3)
 
