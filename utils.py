@@ -85,6 +85,7 @@ def param_initializer(key, n_inp, n_h0, n_h1, n_out, tau_mem, tau_out):
                                                maxval= jnp.sqrt(6/(n_h0+n_h1))) * 1
     w2 = random.uniform(key_h2, [n_h1, n_out], minval=-jnp.sqrt(6/(n_h1+n_out)),
                                                maxval= jnp.sqrt(6/(n_h1+n_out))) * 0.01
+    # Biases
     b0 = jnp.zeros(n_h0)
     b1 = jnp.zeros(n_h1)
     b2 = jnp.zeros(n_out)

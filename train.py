@@ -37,7 +37,6 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
 
     batch_task_predict = vmap(task_predict, in_axes=(None, 0))
 
-    # TODO: Learn threshold
     def inner_loss(weights, X, Y):
         z0, z1, Yhat = batch_task_predict(weights, X)
         L_mse = jnp.mean((Y - Yhat)**2)
@@ -74,11 +73,11 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
         pos_grad_mask  = tree_map(lambda grads: ls_than(grads, -grad_thr), grads_in)
         neg_grad_mask  = tree_map(lambda grads: gr_than(grads, grad_thr), grads_in)
  
-        # Extend grad mask pytree
+        # Expand grad mask to device pytree
         pos_grad_mask = [{'G':grad_mask, 'tp':grad_mask} for grad_mask in pos_grad_mask]
         neg_grad_mask = [{'G':grad_mask, 'tp':grad_mask} for grad_mask in neg_grad_mask]
 
-        # Device program with inner loop update
+        # Program devices with single inner loop update
         updated_pos_devs = tree_map(lambda dev, up_mask: 
                                     write(key_wp, dev, up_mask, tp=t_prog, perf=perf),
                                     pos_devs, pos_grad_mask, is_leaf=lambda x: isinstance(x, dict))
