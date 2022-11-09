@@ -11,9 +11,7 @@ import jax.numpy as jnp
 from jax.tree_util import tree_map
 from einops import repeat
 from functools import partial
-
-GMAX = 20.0
-GMIN = 0.1
+from analog import GMAX, GMIN
 
 BETA = 1
 

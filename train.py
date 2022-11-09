@@ -175,6 +175,7 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
 
     # Save figure
     plt.plot(sX[0,:,-1,0], sY[0,:,-1,0], '.', label='Ground truth', color='red')
+    plt.ylim([-5, 5])
     plt.grid(True); plt.legend()
     wandb.log({"Meta-testing": plt})
     plt.savefig('meta_testing.png')
@@ -203,7 +204,7 @@ if __name__ == '__main__':
     parser.add_argument('--twait', type=float, default=50, help='New task optimized target time')
     parser.add_argument('--ttest', type=float, default=251, help='New task test time') 
     parser.add_argument('--target_fr', type=int, default=2, help='Target firing rate')
-    parser.add_argument('--lr_drop', type=int, default=20000, help='The step number for dropping the learning rate')
+    parser.add_argument('--lr_drop', type=int, default=12000, help='The step number for dropping the learning rate')
     parser.add_argument('--lambda_fr', type=float, default=0, help='Regularization parameter for the firing rate')
     parser.add_argument('--grad_thr', type=float, default=1, help='Threshold for the gradient value for init update')
     parser.add_argument('--perf', action='store_true', help='Enable performance mode')

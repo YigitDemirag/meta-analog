@@ -17,11 +17,10 @@ from jax.lax import cond
 from jax.tree_util import tree_map
 from functools import partial
 
-G0 = 0.1    # (µS) Initial device conductance mean
-GMIN = 0.1  # (µS) Minimum device conductance
-GMAX = 20.0 # (µS) Maximum device conductance
-n_bits = 1  # Ideal device bit-resolution, to compare with SRAM
-
+G0 = 0.1        # (µS) Initial device conductance mean
+GMIN = 0.1      # (µS) Minimum device conductance
+GMAX = 12.0     # (µS) Maximum device conductance
+n_bits = 4      # Approximate PCM bit resolution
 
 @partial(jit, static_argnums=(4))
 def write(key, device, mask, tp, perf=False):
