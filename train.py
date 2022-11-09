@@ -24,7 +24,7 @@ from analog import read, write, zero_time_dim, GMIN, GMAX
 def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
                       n_out, n_h0, n_h1, task_size, tau_mem, tau_out,
                       lr_out, t_read, t_prog, t_wait, t_test, target_fr, 
-                      lambda_fr, perf):
+                      lambda_fr, grad_thr, perf):
 
     def net_step(h, x_t):
         h, out_t = lif_forward(h, x_t)
@@ -55,7 +55,8 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
         loss = L_mse + lambda_fr * L_fr
         return loss
  
-    def update_in(devices, key, sX, sY): # TODO: Only output loop update
+    def update_in(devices, key, sX, sY): 
+        # TODO: Only output loop update
         key_rp, key_rn, key_wp, key_wn = random.split(key, 4)
 
         # Get G+ and G- devices
@@ -70,8 +71,8 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
         value, grads_in = value_and_grad(inner_loss, has_aux=True)(theta, sX, sY)
 
         # Calculate grad masks
-        pos_grad_mask  = tree_map(lambda grads: ls_than(grads, -0.5), grads_in)
-        neg_grad_mask  = tree_map(lambda grads: gr_than(grads, 0.5), grads_in)
+        pos_grad_mask  = tree_map(lambda grads: ls_than(grads, -grad_thr), grads_in)
+        neg_grad_mask  = tree_map(lambda grads: gr_than(grads, grad_thr), grads_in)
  
         # Extend grad mask pytree
         pos_grad_mask = [{'G':grad_mask, 'tp':grad_mask} for grad_mask in pos_grad_mask]
@@ -97,9 +98,9 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
                   'theta-0': theta[0],
                   'theta-1': theta[2],
                   'theta-2': theta[4],
-                  'grad-0': grads_in[0],
-                  'grad-1': grads_in[2],
-                  'grad-2': grads_in[4],
+                  'grad-in-0': grads_in[0],
+                  'grad-in-1': grads_in[2],
+                  'grad-in-2': grads_in[4],
                   'dW-0': updated_weights[0] - theta[0],
                   'dW-1': updated_weights[2] - theta[2],
                   'dW-2': updated_weights[4] - theta[4]}
@@ -120,6 +121,11 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
         devices = get_params(opt_state)
         devices = zero_time_dim(devices)
         (L, metrics), grads_out = value_and_grad(batched_maml_loss, has_aux=True)(devices, key, sX, sY, qX, qY)
+
+        metrics = {k:v[0] for (k,v) in metrics.items()}
+        metrics['grad-out-0'] = grads_out[0]['G']
+        metrics['grad-out-1'] = grads_out[2]['G']
+        metrics['grad-out-2'] = grads_out[4]['G']
         opt_state = opt_update(i, grads_out, opt_state)
         return opt_state, L, metrics
 
@@ -139,7 +145,7 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
             loss_arr.append(L)
             print(f'Epoch: {epoch} - Loss: {L:.3f} - Time : {(time.time()-t0):.3f} s')
             wandb.log({'Outer loop loss':L})
-            wandb.log({k:v[0] for (k,v) in metrics.items()})
+            wandb.log(metrics)
     print('Meta-training completed.')
 
 
@@ -199,6 +205,7 @@ if __name__ == '__main__':
     parser.add_argument('--ttest', type=float, default=251, help='New task test time') 
     parser.add_argument('--target_fr', type=int, default=2, help='Target firing rate')
     parser.add_argument('--lambda_fr', type=float, default=0, help='Regularization parameter for the firing rate')
+    parser.add_argument('--grad_thr', type=float, default=0.5, help='Threshold for the gradient value for init update')
     parser.add_argument('--perf', action='store_true', help='Enable performance mode')
     args = parser.parse_args()
 
@@ -223,4 +230,5 @@ if __name__ == '__main__':
                       t_test=args.ttest,
                       target_fr=args.target_fr,
                       lambda_fr=args.lambda_fr,
+                      grad_thr=args.grad_thr,
                       perf=args.perf)
