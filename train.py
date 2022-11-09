@@ -24,7 +24,7 @@ from analog import read, write, zero_time_dim, GMIN, GMAX
 def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
                       n_out, n_h0, n_h1, task_size, tau_mem, tau_out,
                       lr_out, t_read, t_prog, t_wait, t_test, target_fr, 
-                      lambda_fr, grad_thr, perf):
+                      lr_drop, lambda_fr, grad_thr, perf):
 
     def net_step(h, x_t):
         h, out_t = lif_forward(h, x_t)
@@ -122,29 +122,28 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
         devices = zero_time_dim(devices)
         (L, metrics), grads_out = value_and_grad(batched_maml_loss, has_aux=True)(devices, key, sX, sY, qX, qY)
 
-        metrics = {k:v[0] for (k,v) in metrics.items()}
+        metrics = {k:jnp.mean(v, axis=0) for (k,v) in metrics.items()}
+        metrics['Outer loss'] = L
         metrics['grad-out-0'] = grads_out[0]['G']
         metrics['grad-out-1'] = grads_out[2]['G']
         metrics['grad-out-2'] = grads_out[4]['G']
         opt_state = opt_update(i, grads_out, opt_state)
-        return opt_state, L, metrics
+        return opt_state, metrics
 
-    opt_init, opt_update, get_params = optimizers.adam(step_size=lr_out)
+    piecewise_lr = optimizers.piecewise_constant([lr_drop], [lr_out, lr_out/10])
+    opt_init, opt_update, get_params = optimizers.adam(step_size=piecewise_lr)
     devices, _, _ = analog_init(key, n_inp, n_h0, n_h1, n_out, tau_mem, tau_out)
     opt_state = opt_init(devices)
     
     # Start meta-training
-    loss_arr = []
     for epoch in range(n_iter):
         t0 = time.time()
         key, key_device, key_eval = random.split(key, 3)
         sX, sY, qX, qY = sample_sinusoid_task(key, batch_size=batch_train, 
                                               num_samples_per_task=task_size)
-        opt_state, L, metrics = update_out(key_device, epoch, opt_state, sX, sY, qX, qY)
+        opt_state, metrics = update_out(key_device, epoch, opt_state, sX, sY, qX, qY)
         if epoch % 100 == 0:
-            loss_arr.append(L)
-            print(f'Epoch: {epoch} - Loss: {L:.3f} - Time : {(time.time()-t0):.3f} s')
-            wandb.log({'Outer loop loss':L})
+            print(f'Epoch: {epoch} - Loss: {metrics["Outer loss"]:.3f} - Time : {(time.time()-t0):.3f} s')
             wandb.log(metrics)
     print('Meta-training completed.')
 
@@ -204,8 +203,9 @@ if __name__ == '__main__':
     parser.add_argument('--twait', type=float, default=50, help='New task optimized target time')
     parser.add_argument('--ttest', type=float, default=251, help='New task test time') 
     parser.add_argument('--target_fr', type=int, default=2, help='Target firing rate')
+    parser.add_argument('--lr_drop', type=int, default=20000, help='The step number for dropping the learning rate')
     parser.add_argument('--lambda_fr', type=float, default=0, help='Regularization parameter for the firing rate')
-    parser.add_argument('--grad_thr', type=float, default=0.5, help='Threshold for the gradient value for init update')
+    parser.add_argument('--grad_thr', type=float, default=1, help='Threshold for the gradient value for init update')
     parser.add_argument('--perf', action='store_true', help='Enable performance mode')
     args = parser.parse_args()
 
@@ -229,6 +229,7 @@ if __name__ == '__main__':
                       t_wait=args.twait,
                       t_test=args.ttest,
                       target_fr=args.target_fr,
+                      lr_drop=args.lr_drop,
                       lambda_fr=args.lambda_fr,
                       grad_thr=args.grad_thr,
                       perf=args.perf)
