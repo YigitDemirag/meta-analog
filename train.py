@@ -202,7 +202,7 @@ if __name__ == '__main__':
     parser.add_argument('--tprog', type=float, default=101, help='New task programming time')
     parser.add_argument('--twait', type=float, default=50, help='New task optimized target time')
     parser.add_argument('--ttest', type=float, default=251, help='New task test time') 
-    parser.add_argument('--target_fr', type=int, default=2, help='Target firing rate')
+    parser.add_argument('--target_fr', type=float, default=2, help='Target firing rate')
     parser.add_argument('--lr_drop', type=int, default=12000, help='The step number for dropping the learning rate')
     parser.add_argument('--lambda_fr', type=float, default=0, help='Regularization parameter for the firing rate')
     parser.add_argument('--grad_thr', type=float, default=1, help='Threshold for the gradient value for init update')
