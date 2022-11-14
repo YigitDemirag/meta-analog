@@ -3,7 +3,7 @@
 meta-analog is a minimalistic JAX implementation of the Model-Agnostic Meta-Learning ([MAML](https://arxiv.org/abs/1703.03400)) for Spiking Neural Networks 
 realized on a differentiable analog hardware model. Sounds too fancy? Here is the reasoning behind it:
 
-- **Why analog hardware?** Analog hardware e.g. PCM crossbar arrays can implement $$O(1)$$ matmul operation using Kirchhoff's current law and Ohm's Law. This leads to extremely low inference latency and energy cost, required by the edge computing. These devices are currently the most scalable solutions for the edge inference.
+- **Why analog hardware?** Analog hardware e.g. PCM crossbar arrays can implement $O(1)$ matmul operation using Kirchhoff's current law and Ohm's Law. This leads to extremely low inference latency and energy cost, required by the edge computing. These devices are currently the most scalable solutions for the edge inference.
 
 - **Why spikes?** Purely as an engineering requirement. On noisy substrates like analog crossbar arrays (or brain), the spikes are the most robust way to encode information. Spikes are also the language of event-based sensors.
 
