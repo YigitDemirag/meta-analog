@@ -12,7 +12,7 @@ from utils import gr_than
 def lif_forward(state, x):
     ''' Simplified (no alpha kernel on synapses) 2-layer FF LIF network
     '''
-    w0, b0, w1, b1, w2, b2 = state[0]   # Static weights and biases
+    w0, b0, w1, b1, w2     = state[0]   # Static weights and biases
     alpha, kappa           = state[1]   # Static neuron states
     v0, z0, v1, z1, v2     = state[2]   # Dynamic neuron states
 
@@ -22,4 +22,4 @@ def lif_forward(state, x):
     z1  = gr_than(v1) # Spiking state of second layer
     v2  = kappa * v2 + jnp.dot(z1, w2) # Leaky integrator output unit
 
-    return [[w0, b0, w1, b1, w2, b2], [alpha, kappa], [v0, z0, v1, z1, v2]], [z0, z1, v2]
+    return [[w0, b0, w1, b1, w2], [alpha, kappa], [v0, z0, v1, z1, v2]], [z0, z1, v2]

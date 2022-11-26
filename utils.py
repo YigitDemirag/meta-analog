@@ -88,11 +88,10 @@ def param_initializer(key, n_inp, n_h0, n_h1, n_out, tau_mem, tau_out):
     # Biases
     b0 = jnp.zeros(n_h0)
     b1 = jnp.zeros(n_h1)
-    b2 = jnp.zeros(n_out)
 
     neuron_dyn = [jnp.zeros(n_h0), jnp.zeros(n_h0), jnp.zeros(n_h1), 
                   jnp.zeros(n_h1), jnp.zeros(n_out)]
-    net_params = [[w0, b0, w1, b1, w2, b2], [alpha, kappa], neuron_dyn]
+    net_params = [[w0, b0, w1, b1, w2], [alpha, kappa], neuron_dyn]
     return net_params
 
 @partial(jit, static_argnums=(1,2,3,4,5,6))
