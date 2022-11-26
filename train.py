@@ -55,7 +55,6 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
         return loss
  
     def update_in(devices, key, sX, sY): 
-        # TODO: Only output loop update
         key_rp, key_rn, key_wp, key_wn = random.split(key, 4)
 
         # Get G+ and G- devices
