@@ -72,7 +72,11 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
         # Calculate grad masks
         pos_grad_mask  = tree_map(lambda grads: ls_than(grads, -grad_thr), grads_in)
         neg_grad_mask  = tree_map(lambda grads: gr_than(grads, grad_thr), grads_in)
- 
+
+        # Zero the mask except output layer
+        pos_grad_mask[:4] = tree_map(lambda x:jnp.zeros(x.shape), pos_grad_mask[:4])
+        neg_grad_mask[:4] = tree_map(lambda x:jnp.zeros(x.shape), neg_grad_mask[:4])
+
         # Expand grad mask to device pytree
         pos_grad_mask = [{'G':grad_mask, 'tp':grad_mask} for grad_mask in pos_grad_mask]
         neg_grad_mask = [{'G':grad_mask, 'tp':grad_mask} for grad_mask in neg_grad_mask]
