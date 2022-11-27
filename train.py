@@ -18,13 +18,13 @@ from jax.example_libraries import optimizers
 import time 
 import matplotlib.pyplot as plt
 from network import lif_forward
-from utils import sample_sinusoid_task, ls_than, gr_than, analog_init
+from utils import sample_sinusoid_task, ls_than, gr_than, analog_init, add_noise
 from analog import read, write, zero_time_dim, GMIN, GMAX
 
 def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
                       n_out, n_h0, n_h1, task_size, tau_mem, tau_out,
                       lr_out, t_read, t_prog, t_wait, t_test, target_fr, 
-                      lr_drop, lambda_fr, grad_thr, perf):
+                      lr_drop, lambda_fr, grad_thr, perf, off_noise):
 
     def net_step(h, x_t):
         h, out_t = lif_forward(h, x_t)
@@ -115,7 +115,11 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
         return outer_loss(updated_weights, qX, qY), metrics
 
     def batched_maml_loss(devices, key, sX, sY, qX, qY):
-        task_losses, metrics = vmap(maml_loss, in_axes=(None, None, 0, 0, 0, 0))(devices, key, sX, sY, qX, qY)
+        key_off, key_on = random.split(key, 2)
+        # Add noise via straight-through estimator for robust offline programming
+        devices = tree_map(lambda dev: add_noise(dev, key_off, off_noise), devices)
+        devices = zero_time_dim(devices)
+        task_losses, metrics = vmap(maml_loss, in_axes=(None, None, 0, 0, 0, 0))(devices, key_on, sX, sY, qX, qY)
         return jnp.mean(task_losses), metrics
 
     @jit
@@ -165,7 +169,7 @@ def train_meta_analog(key, batch_train, batch_test, n_iter, n_inp,
     theta = [(read(key_rp, dp, t=t_test, perf=perf)-read(key_rn, dn, t=t_test, perf=perf)) 
                 / (GMAX-GMIN) for dp, dn in zip(pos_devs, neg_devs)]
 
-    sX_t = sX[:,:task_size,:,:] # batch, number, time, dim
+    sX_t = sX[:,:task_size,:,:]
     sY_t = sY[:,:task_size,:,:]
     plt.figure(figsize=(10,4));
     c = ['slateblue', 'darkblue']
@@ -191,7 +195,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, default=23, help='Random seed')
     parser.add_argument('--batch_train', type=int, default=256, help='Batch size for meta-training')
-    parser.add_argument('--batch_test', type=int, default=10, help='Batch size for meta-testing')
+    parser.add_argument('--batch_test', type=int, default=1, help='Batch size for meta-testing')
     parser.add_argument('--n_iter', type=int, default=20000, help='Number of iterations')
     parser.add_argument('--n_inp', type=int, default=1, help='Number of input neurons')
     parser.add_argument('--n_out', type=int, default=1, help='Number of output neurons')
@@ -210,6 +214,7 @@ if __name__ == '__main__':
     parser.add_argument('--lambda_fr', type=float, default=0, help='Regularization parameter for the firing rate')
     parser.add_argument('--grad_thr', type=float, default=1, help='Threshold for the gradient value for init update')
     parser.add_argument('--perf', action='store_true', help='Enable performance mode')
+    parser.add_argument('--off_noise', type=float, default=0.05, help='Added noise for robust offline programming')
     args = parser.parse_args()
 
     wandb.init(project='meta-analog', config=args)
@@ -235,4 +240,5 @@ if __name__ == '__main__':
                       lr_drop=args.lr_drop,
                       lambda_fr=args.lambda_fr,
                       grad_thr=args.grad_thr,
-                      perf=args.perf)
+                      perf=args.perf,
+                      off_noise=args.off_noise)
