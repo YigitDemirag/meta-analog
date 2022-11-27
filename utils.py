@@ -114,3 +114,19 @@ def analog_init(key, n_inp, n_h0, n_h1, n_out, tau_mem, tau_out):
                      'tp': 0.0 * jnp.stack([Gp, Gp])}) for Gp, Gn in zip(G_pos, G_neg)]
 
     return [devices, net_params[1], net_params[2]]
+
+@jax.custom_jvp
+def add_noise(weight, key, noise_std):
+    ''' Adds noise only for inference
+    '''
+    weight = weight + random.normal(key, weight.shape) * jnp.max(weight) * noise_std
+    weight = jnp.clip(weight, GMIN, GMAX)
+    return weight
+ 
+@add_noise.defjvp
+def add_noise_jvp(primals, tangents):
+    weight, key, noise_std = primals
+    x_dot, _, _ = tangents
+    primal_out = add_noise(weight, key, noise_std)
+    tangent_out = x_dot
+    return primal_out, tangent_out
