@@ -56,6 +56,6 @@ This is an unpublished work. A GitHub ⭐️ is the best ~~citation~~ for now.
  title = {Overcoming phase-change material non-idealities by meta-learning for adaptation on the edge},
  note = {Contributed talk at Online Conference on Neuromorphic Materials, Devices, Circuits and Systems (NeuMatDeCaS) [submitted]}
  url = {http://github.com/yigitdemirag/meta-analog},
- year = {2022},
+ year = {2023},
 }
 ```
