@@ -3,9 +3,9 @@ Model Agnostic Meta-Learning (MAML) training for
 spiking neural networks with memristive synapses for 
 adaptation on the edge computing.
 
-Offline training     New task arrives        New task performance
-t=0.1s               t=100s      t=101s      t=151s
-[deployement] ------ [t_read] -- [t_prog] -- [t_test]
+Offline training      New task         Adapt to task     Test perf
+t=0.1s                t=100s           t=101s            t=151s
+[deployement] ------- [t_read] ------- [t_prog] ------- [t_test]
 
 Author: Yigit Demirag, Forschungszentrum Jülich, 2022
 '''

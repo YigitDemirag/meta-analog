@@ -17,7 +17,7 @@ from jax.lax import cond
 from jax.tree_util import tree_map
 from functools import partial
 
-G0 = 0.1        # (µS) Initial device conductance mean
+G0 = 0.1        # (µS) Initial device conductance
 GMIN = 0.1      # (µS) Minimum device conductance
 GMAX = 12.0     # (µS) Maximum device conductance
 n_bits = 4      # Approximate PCM bit resolution

@@ -8,7 +8,6 @@ Author: Yigit Demirag, Forschungszentrum Jülich, 2022
 import jax.numpy as jnp
 from utils import gr_than
 
-
 def lif_forward(state, x):
     ''' Simplified (no alpha kernel on synapses) 2-layer FF LIF network
     '''
