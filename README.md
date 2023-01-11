@@ -54,7 +54,7 @@ This is an unpublished work. A GitHub ⭐️ is the best ~~citation~~ for now.
 @unpublished{demirag22github,
  author = {Yigit Demirag and Regina Dittmann and Giacomo Indiveri and Emre Neftci},
  title = {Overcoming phase-change material non-idealities by meta-learning for adaptation on the edge},
- note = {Contributed talk at Online Conference on Neuromorphic Materials, Devices, Circuits and Systems (NeuMatDeCaS) [submitted]}
+ note = {Contributed talk at Online Conference on Neuromorphic Materials, Devices, Circuits and Systems (NeuMatDeCaS)}
  url = {http://github.com/yigitdemirag/meta-analog},
  year = {2023},
 }
