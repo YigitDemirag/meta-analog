@@ -11,7 +11,6 @@ import jax.numpy as jnp
 from jax.tree_util import tree_map
 from einops import repeat
 from functools import partial
-from analog import GMAX, GMIN
 
 BETA = 1
 
@@ -93,40 +92,3 @@ def param_initializer(key, n_inp, n_h0, n_h1, n_out, tau_mem, tau_out):
                   jnp.zeros(n_h1), jnp.zeros(n_out)]
     net_params = [[w0, b0, w1, b1, w2], [alpha, kappa], neuron_dyn]
     return net_params
-
-@partial(jit, static_argnums=(1,2,3,4,5,6))
-def analog_init(key, n_inp, n_h0, n_h1, n_out, tau_mem, tau_out):
-    """
-    Maps ideal FP32 weights to G+ and G- differential memristor
-    conductances such that W = (G+ - G-) / (GMAX - GMIN) by 
-    initializing G+ and calculating G-. 
-    This initialization matters only for offline SW training.
-    """
-    net_params = param_initializer(key, n_inp, n_h0, n_h1, n_out, tau_mem, tau_out)
-
-    G_pos = [random.uniform(l_key, shape=l_W.shape, minval=7, maxval=12) 
-             for l_key, l_W 
-             in zip(random.split(key, len(net_params[0])), net_params[0])]
-
-    G_neg = [Gp - W * (GMAX-GMIN) for Gp, W in zip(G_pos, net_params[0])]
-
-    devices = [dict({'G' : jnp.stack([Gp, Gn]),
-                     'tp': 0.0 * jnp.stack([Gp, Gp])}) for Gp, Gn in zip(G_pos, G_neg)]
-
-    return [devices, net_params[1], net_params[2]]
-
-@jax.custom_jvp
-def add_noise(weight, key, noise_std):
-    ''' Adds noise only for inference
-    '''
-    weight = weight + random.normal(key, weight.shape) * jnp.max(weight) * noise_std
-    weight = jnp.clip(weight, GMIN, GMAX)
-    return weight
- 
-@add_noise.defjvp
-def add_noise_jvp(primals, tangents):
-    weight, key, noise_std = primals
-    x_dot, _, _ = tangents
-    primal_out = add_noise(weight, key, noise_std)
-    tangent_out = x_dot
-    return primal_out, tangent_out
