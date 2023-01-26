@@ -13,7 +13,7 @@ realized on a differentiable analog hardware model. Sounds too fancy? Here is wh
 
  2) Efficient credit assignment in multilayer spiking networks is an unsolved problem. Meta-learning allows updating only the network's last layer for the new task, which can be implemented by simple [Delta Rule](https://en.wikipedia.org/wiki/Delta_rule).
 
- 3) Training from tabula-rasa is not feasible for edge devices. Because offline training with larger datasets offers finds better solutions. And devices can be precisely programmed offline with iterative programming.
+ 3) Training from tabula-rasa is not feasible for edge devices. Because offline training with larger datasets often finds better solutions. And devices can be precisely programmed offline with iterative programming.
 
  4) For the materials like PCM, whose conductance slowly drifts with time, edge adaptation keeps the network performance stable.
 
